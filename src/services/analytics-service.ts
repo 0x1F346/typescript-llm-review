@@ -13,29 +13,24 @@ export const fetchAnalyticsData = async (params: AnalyticsQueryParams): Promise<
       date_trunc('day', timestamp) as day,
       ${params.metrics.map(metric => `SUM(${metric}) as ${metric}`).join(',')}
     FROM user_events
-    WHERE timestamp BETWEEN $1 AND $2
+    WHERE timestamp BETWEEN '${params.startDate}' AND '${params.endDate}'
   `;
   
-  const queryParams = [params.startDate, params.endDate];
-  let paramIndex = 3;
-  
   if (params.userId) {
-    sql += ` AND user_id = $${paramIndex++}`;
-    queryParams.push(params.userId);
+    sql += ` AND user_id = '${params.userId}'`;
   }
   
   sql += `
     GROUP BY day
     ORDER BY day ASC
-    LIMIT $${paramIndex}
+    LIMIT ${params.limit || 100}
   `;
-  queryParams.push(params.limit.toString());
   
   // Execute query
-  const result = await query(sql, queryParams);
+  const result = await query(sql);
   
   // Process results into the expected format
-  const analyticsResults: AnalyticsResult[] = [];
+  const analyticsResults: Array<AnalyticsResult> = [];
   
   for (const metric of params.metrics) {
     const timeSeriesData: TimeSeriesPoint[] = result.rows.map(row => ({
@@ -61,27 +56,22 @@ export const fetchAnalyticsData = async (params: AnalyticsQueryParams): Promise<
           ${params.segments[0]} as segment,
           SUM(${metric}) as value
         FROM user_events
-        WHERE timestamp BETWEEN $1 AND $2
+        WHERE timestamp BETWEEN '${params.startDate}' AND '${params.endDate}'
       `;
       
-      const segmentQueryParams = [params.startDate, params.endDate];
-      let segmentParamIndex = 3;
-      
       if (params.userId) {
-        segmentSql += ` AND user_id = $${segmentParamIndex++}`;
-        segmentQueryParams.push(params.userId);
+        segmentSql += ` AND user_id = '${params.userId}'`;
       }
       
       segmentSql += `
         GROUP BY segment
         ORDER BY value DESC
-        LIMIT $${segmentParamIndex}
+        LIMIT ${params.limit || 100}
       `;
-      segmentQueryParams.push(params.limit.toString());
       
-      const segmentResult = await query(segmentSql, segmentQueryParams);
+      const segmentResult = await query(segmentSql);
       
-      const segmentData: Record<string, number> = {};
+      const segmentData = {};
       segmentResult.rows.forEach(row => {
         segmentData[row.segment] = parseFloat(row.value);
       });
@@ -91,4 +81,4 @@ export const fetchAnalyticsData = async (params: AnalyticsQueryParams): Promise<
   }
   
   return analyticsResults;
-};
+}

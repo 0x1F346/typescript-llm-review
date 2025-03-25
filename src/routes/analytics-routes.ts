@@ -6,11 +6,20 @@ import { generateCacheKey, getCachedData, setCachedData } from '../utils/cache-u
 // Create router
 const router = express.Router();
 
+// Add custom property to Express Request
+interface AuthenticatedRequest extends Request {
+  validatedParams?: AnalyticsQueryParams;
+  user?: {
+    id: string;
+    role: string;
+  };
+}
+
 // Middleware to validate request params
 const validateQueryParams = (req: Request, res: Response, next: NextFunction) => {
   try {
     // Convert query params from string to expected types
-    const params: any = {
+    const params = {
       ...req.query,
       metrics: req.query.metrics ? 
         (Array.isArray(req.query.metrics) ? req.query.metrics : [req.query.metrics]) : [],
@@ -27,10 +36,24 @@ const validateQueryParams = (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
+// Helper to check if user has access to analytics
+function checkUserAccess(userId: string, requesterUserId: string): boolean {
+  return userId === requesterUserId || requesterUserId === 'admin';
+}
+
 // API endpoint to get analytics data
 router.get('/data', validateQueryParams, async (req: Request, res: Response) => {
   try {
-    const params = (req as any).validatedParams as AnalyticsQueryParams;
+    const requestWithParams = req as AuthenticatedRequest;
+    const params = requestWithParams.validatedParams;
+    
+    // Basic access control
+    if (params.userId && requestWithParams.user && params.userId !== requestWithParams.user.id) {
+      if (!checkUserAccess(params.userId, requestWithParams.user.id)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+    
     const cacheKey = generateCacheKey(params);
     
     // Try to get from cache first
@@ -55,7 +78,7 @@ router.get('/data', validateQueryParams, async (req: Request, res: Response) => 
 // API endpoint to refresh cache
 router.post('/refresh-cache', validateQueryParams, async (req: Request, res: Response) => {
   try {
-    const params = (req as any).validatedParams as AnalyticsQueryParams;
+    const params = (req as any).validatedParams;
     const cacheKey = generateCacheKey(params);
     
     // Fetch fresh data
